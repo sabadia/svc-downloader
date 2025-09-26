@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -16,10 +18,14 @@ type Config struct {
 }
 
 func Default() Config {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
 	return Config{
 		HTTPPort:       8089,
-		DataDir:        "./data",
-		BadgerDir:      "./data/badger",
+		DataDir:        filepath.Join(home, ".slog", "downloader", "data"),
+		BadgerDir:      filepath.Join(home, ".slog", "downloader", "data", "badger"),
 		MaxBodyBytes:   25 << 20,
 		DefaultQueueID: "main",
 		GracefulSecs:   10 * time.Second,

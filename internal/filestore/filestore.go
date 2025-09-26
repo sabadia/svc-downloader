@@ -26,6 +26,13 @@ func (l *LocalFileStore) Prepare(ctx context.Context, d *models.Download) error 
 	}
 	baseDir := d.File.Path
 	if baseDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
+		baseDir = filepath.Join(home, "Downloads")
+	}
+	if baseDir == "" {
 		return errors.New("file.path required")
 	}
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
@@ -154,7 +161,12 @@ func (l *LocalFileStore) tempDir(d *models.Download) string {
 	if d.File != nil && d.File.TempDir != "" {
 		return filepath.Join(d.File.TempDir, d.ID)
 	}
-	return filepath.Join(d.File.Path, ".tmp", d.ID)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Println("warning: could not determine user home directory for temp files, using current directory")
+		return filepath.Join(d.File.Path, ".tmp", d.ID)
+	}
+	return filepath.Join(home, ".slog", "downloader", "tmp", d.ID)
 }
 
 func (l *LocalFileStore) finalPath(d *models.Download) string {

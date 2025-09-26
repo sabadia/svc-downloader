@@ -154,6 +154,7 @@ func (s *DownloadServiceImpl) Remove(ctx context.Context, id string, deleteFiles
 	}
 	_ = s.publish(ctx, models.EventCancelled, *d, map[string]any{"deleted": true})
 	return nil
+
 }
 
 func (s *DownloadServiceImpl) Get(ctx context.Context, id string) (*models.Download, error) {

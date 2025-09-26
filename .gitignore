@@ -1,0 +1,95 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Build outputs
+bin/
+build/
+dist/
+out/
+*.out
+
+# Go build/cache
+*.test                   # test binary
+*.prof                   # profiling data
+go.work                 # if using go.work
+go.work.sum             # if using workspaces & want to ignore
+*.modcoverage
+
+# Go modules
+vendor/
+# If you commit vendor, remove or comment above
+
+# Dependency directories (not module-cache, commit go.sum instead)
+# Avoid ignoring module cache unless necessary
+# GOPATH/pkg/mod/
+
+# Generated files (OpenAPI / JSON Schema etc by Huma)
+schemas/
+openapi.json
+openapi.yaml
+openapi-*.json
+openapi-*.yaml
+
+# Environment / secret files
+.env
+*.env
+.env.local
+.env.*.local
+config/*.local
+secret*.json
+
+# IDE/editor files
+.vscode/
+.idea/
+*.iml
+*.ipr
+*.iws
+*.sublime-project
+*.sublime-workspace
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*._~
+
+# Coverage reports
+coverage.out
+coverage.txt
+*.cov
+
+# Misc
+# If using Go generate or other code generation tools
+gen/
+generated/
+*.gen.go
+
+# Docker files
+docker-compose.override.yml
+.env.docker
+
+# Ignore compiled API clients / SDKs if generated in‐repo
+client/
+sdk/
+
+# Ignore Protobuf / gRPC generated files if you generate them
+pb/
+*.pb.go
+
+# Ignore testdata if large or generated
+testdata/
+data/
+**/.DS_Store

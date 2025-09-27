@@ -134,6 +134,7 @@ jobs:
         with:
           name: darwin-universal
           path: |
+            dist/*.tar.gz
             dist/*.zip
             dist/*.sha256
           if-no-files-found: error
@@ -225,6 +226,8 @@ jobs:
           path: |
             dist/*.oci.tar
             dist/*.sha256
+            dist/*.tar.gz
+            dist/*.zip
           if-no-files-found: error
 
   publish:
@@ -237,6 +240,15 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+          name: |
+            linux-amd64
+            linux-arm64
+            windows-amd64
+            windows-arm64
+            darwin-amd64
+            darwin-arm64
+            darwin-universal
+            docker-image
 
       - name: List artifacts
         run: ls -R dist

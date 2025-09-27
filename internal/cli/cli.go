@@ -128,4 +128,5 @@ func Run() {
 
 	cli.Root().AddCommand(serveCmd, startCmd, stopCmd, restartCmd, statusCmd)
 	cli.Run()
+
 }

@@ -198,6 +198,35 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Prepare dist dir
+        run: mkdir -p dist
+
+      - name: Export multi-arch image as OCI archive
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: |
+            APP_NAME=${{ env.APP_NAME }}
+            MAIN_PKG=${{ env.MAIN_PKG }}
+          tags: |
+            ${{ steps.meta.outputs.ghcr }}
+          outputs: type=oci,dest=./dist/${{ env.APP_NAME }}_${{ steps.meta.outputs.version }}_docker_multi-arch.oci.tar
+          cache-from: type=gha
+
+      - name: Checksum OCI archive
+        run: sha256sum dist/${{ env.APP_NAME }}_${{ steps.meta.outputs.version }}_docker_multi-arch.oci.tar > dist/${{ env.APP_NAME }}_${{ steps.meta.outputs.version }}_docker_multi-arch.oci.tar.sha256
+
+      - name: Upload artifact (docker image)
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: |
+            dist/*.oci.tar
+            dist/*.sha256
+          if-no-files-found: error
+
   publish:
     name: Attach assets to release
     runs-on: ubuntu-latest
@@ -223,6 +252,7 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.oci.tar
             dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

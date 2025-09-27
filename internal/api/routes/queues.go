@@ -79,23 +79,29 @@ func RegisterQueues(api huma.API, svc models.QueueService) {
 	})
 
 	huma.Register(api, huma.Operation{OperationID: "queueBulkReassign", Method: http.MethodPost, Path: "/queues/{id}/bulk/reassign"}, func(ctx context.Context, input *struct {
-		ID string `path:"id"`
-		To string `json:"to"`
+		ID   string `path:"id"`
+		Body *struct {
+			To string `json:"to"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.BulkReassign(ctx, input.ID, input.To)
+		return &struct{}{}, h.Svc.BulkReassign(ctx, input.ID, input.Body.To)
 	})
 
 	huma.Register(api, huma.Operation{OperationID: "queueBulkPriority", Method: http.MethodPost, Path: "/queues/{id}/bulk/priority"}, func(ctx context.Context, input *struct {
-		ID       string `path:"id"`
-		Priority int    `json:"priority"`
+		ID   string `path:"id"`
+		Body *struct {
+			Priority int `json:"priority"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.BulkSetPriority(ctx, input.ID, input.Priority)
+		return &struct{}{}, h.Svc.BulkSetPriority(ctx, input.ID, input.Body.Priority)
 	})
 
 	huma.Register(api, huma.Operation{OperationID: "queueBulkStatus", Method: http.MethodPost, Path: "/queues/{id}/bulk/status"}, func(ctx context.Context, input *struct {
-		ID     string                `path:"id"`
-		Status models.DownloadStatus `json:"status"`
+		ID   string `path:"id"`
+		Body *struct {
+			Status models.DownloadStatus `json:"status"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.BulkUpdateStatus(ctx, input.ID, input.Status)
+		return &struct{}{}, h.Svc.BulkUpdateStatus(ctx, input.ID, input.Body.Status)
 	})
 }

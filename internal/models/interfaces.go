@@ -66,7 +66,7 @@ type TransportClient interface {
 
 type FileStore interface {
 	Prepare(ctx context.Context, d *Download) error
-	OpenSegmentWriter(ctx context.Context, d *Download, s Segment) (io.WriteCloser, error)
+	OpenSegmentWriter(ctx context.Context, d *Download, s Segment) (io.WriteCloser, int64, error)
 	CompleteSegment(ctx context.Context, d *Download, s Segment) error
 	MergeSegments(ctx context.Context, d *Download) error
 	RemoveDownloadFiles(ctx context.Context, d *Download) error

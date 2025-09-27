@@ -291,6 +291,19 @@ func listDownloadsTxn(txn *badger.Txn, ctx context.Context, options models.ListD
 			}
 			return result[i].CreatedAt.Before(result[j].CreatedAt)
 		})
+	} else if options.OrderBy == "priority" {
+		sort.Slice(result, func(i, j int) bool {
+			if options.OrderDesc {
+				if result[i].Priority == result[j].Priority {
+					return result[i].CreatedAt.After(result[j].CreatedAt)
+				}
+				return result[i].Priority > result[j].Priority
+			}
+			if result[i].Priority == result[j].Priority {
+				return result[i].CreatedAt.Before(result[j].CreatedAt)
+			}
+			return result[i].Priority < result[j].Priority
+		})
 	}
 	return result, nil
 }

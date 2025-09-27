@@ -43,6 +43,17 @@ func (w *WorkerManager) tick(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	// Recover stale running downloads (no updates for 5 minutes)
+	const staleAfter = 5 * time.Minute
+	runningList, _ := w.repo.ListDownloads(ctx, models.ListDownloadsOptions{Statuses: []models.DownloadStatus{models.StatusRunning}}, 1000, 0)
+	for i := range runningList {
+		d := runningList[i]
+		if d.UpdatedAt.IsZero() || time.Since(d.UpdatedAt) > staleAfter {
+			// Requeue
+			d.Status = models.StatusQueued
+			_ = w.repo.UpdateDownload(ctx, &d)
+		}
+	}
 	for i := range queues {
 		q := queues[i]
 		if q.Paused {
@@ -67,7 +78,7 @@ func (w *WorkerManager) tick(ctx context.Context) {
 		if toStart <= 0 {
 			continue
 		}
-		opts := models.ListDownloadsOptions{Statuses: []models.DownloadStatus{models.StatusQueued}, QueueIDs: []string{q.ID}}
+		opts := models.ListDownloadsOptions{Statuses: []models.DownloadStatus{models.StatusQueued}, QueueIDs: []string{q.ID}, OrderBy: "priority", OrderDesc: true}
 		list, err := w.repo.ListDownloads(ctx, opts, toStart, 0)
 		if err != nil {
 			continue

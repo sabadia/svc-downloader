@@ -68,6 +68,8 @@ type DownloadConfig struct {
 	Cookies map[string]string `json:"cookies,omitempty"`
 
 	DisableHead bool `json:"disable_head,omitempty"`
+
+	SegmentChecksumType string `json:"segment_checksum_type,omitempty"`
 }
 
 type FileOptions struct {

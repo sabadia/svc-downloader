@@ -3,10 +3,12 @@ package filestore
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"os"
 	"path/filepath"
@@ -45,22 +47,28 @@ func (l *LocalFileStore) Prepare(ctx context.Context, d *models.Download) error 
 	return nil
 }
 
-func (l *LocalFileStore) OpenSegmentWriter(ctx context.Context, d *models.Download, s models.Segment) (io.WriteCloser, error) {
+func (l *LocalFileStore) OpenSegmentWriter(ctx context.Context, d *models.Download, s models.Segment) (io.WriteCloser, int64, error) {
 	tmp := l.tempDir(d)
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	p := filepath.Join(tmp, fmt.Sprintf("%09d.part", s.Index))
-	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0o644)
+	// Open with read/write so we can seek
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	// seek to end for resume
+	st, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return nil, 0, err
+	}
+	// Seek to end for resume
 	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		f.Close()
-		return nil, err
+		return nil, 0, err
 	}
-	return f, nil
+	return f, st.Size(), nil
 }
 
 func (l *LocalFileStore) CompleteSegment(ctx context.Context, d *models.Download, s models.Segment) error {
@@ -77,6 +85,7 @@ func (l *LocalFileStore) MergeSegments(ctx context.Context, d *models.Download) 
 		return errors.New("no parts to merge")
 	}
 	outPath := l.finalPath(d)
+
 	// Overwrite/UniqueFilename handling
 	if _, err := os.Stat(outPath); err == nil {
 		if d.File != nil && !d.File.Overwrite {
@@ -101,21 +110,39 @@ func (l *LocalFileStore) MergeSegments(ctx context.Context, d *models.Download) 
 	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 		return err
 	}
-	out, err := os.Create(outPath)
+	// Merge checkpoint marker
+	marker := filepath.Join(l.tempDir(d), ".merge.lock")
+	_ = os.WriteFile(marker, []byte("inprogress"), 0o644)
+	defer os.Remove(marker)
+	// Clean any previous temp file
+	tmpOut := outPath + ".merge.tmp"
+	_ = os.Remove(tmpOut)
+	mergeOut, err := os.Create(tmpOut)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() { _ = mergeOut.Close() }()
+
 	for _, p := range parts {
 		f, err := os.Open(p)
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(out, f); err != nil {
+		if _, err := io.Copy(mergeOut, f); err != nil {
 			f.Close()
 			return err
 		}
 		f.Close()
+	}
+	if err := mergeOut.Sync(); err != nil {
+		return err
+	}
+	if err := mergeOut.Close(); err != nil {
+		return err
+	}
+	// Atomic replace
+	if err := os.Rename(tmpOut, outPath); err != nil {
+		return err
 	}
 	// Cleanup temp directory
 	_ = os.RemoveAll(l.tempDir(d))
@@ -145,12 +172,27 @@ func (l *LocalFileStore) VerifyChecksum(ctx context.Context, d *models.Download)
 		}
 		sum := hex.EncodeToString(h.Sum(nil))
 		return strings.EqualFold(sum, d.File.Checksum), nil
+	case "sha1":
+		h := sha1.New()
+		if _, err := io.Copy(h, f); err != nil {
+			return false, err
+		}
+		sum := hex.EncodeToString(h.Sum(nil))
+		return strings.EqualFold(sum, d.File.Checksum), nil
 	case "sha256":
 		h := sha256.New()
 		if _, err := io.Copy(h, f); err != nil {
 			return false, err
 		}
 		sum := hex.EncodeToString(h.Sum(nil))
+		return strings.EqualFold(sum, d.File.Checksum), nil
+	case "crc32c":
+		t := crc32.MakeTable(crc32.Castagnoli)
+		h := crc32.New(t)
+		if _, err := io.Copy(h, f); err != nil {
+			return false, err
+		}
+		sum := fmt.Sprintf("%08x", h.Sum32())
 		return strings.EqualFold(sum, d.File.Checksum), nil
 	default:
 		return false, fmt.Errorf("unsupported checksum type: %s", d.File.ChecksumType)
@@ -176,6 +218,14 @@ func (l *LocalFileStore) finalPath(d *models.Download) string {
 		filename = d.ID
 	}
 	return filepath.Join(d.File.Path, filename)
+}
+func (l *LocalFileStore) finalMergePath(d *models.Download) string {
+	filename := d.File.Filename
+	if filename == "" && d.File != nil {
+		// fallback to ID if no filename provided
+		filename = d.ID
+	}
+	return filepath.Join(l.tempDir(d), filename)
 }
 
 func (l *LocalFileStore) listParts(d *models.Download) ([]string, error) {

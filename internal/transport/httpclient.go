@@ -97,6 +97,7 @@ func (h *HTTPClient) headFallback(ctx context.Context, req models.RequestOptions
 			lastErr = err
 			continue
 		}
+		// Ask for beginning of file to elicit Content-Range/Length
 		r.Header.Set("Range", "bytes=0-")
 		applyHeaders(r, req, cfg)
 		resp, err := client.Do(r)

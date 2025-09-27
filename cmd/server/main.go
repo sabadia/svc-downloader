@@ -32,6 +32,11 @@ func main() {
 			cfg.HTTPPort = port
 		}
 	}
+	if grl := os.Getenv("GLOBAL_RATE_LIMIT_BPS"); grl != "" {
+		if v, err := strconv.ParseInt(grl, 10, 64); err == nil {
+			cfg.GlobalRateLimitBPS = v
+		}
+	}
 
 	repo, err := repository.NewBadgerRepository(cfg.BadgerDir)
 	if err != nil {
@@ -54,6 +59,11 @@ func main() {
 	// Ensure default queue exists
 	if _, err := repo.GetQueue(context.Background(), models.DefaultQueueName); err != nil {
 		_ = repo.SaveQueue(context.Background(), &models.Queue{ID: models.DefaultQueueName, Name: models.DefaultQueueName, Concurrency: 32, Default: true})
+	}
+
+	// Apply global rate limit if configured
+	if cfg.GlobalRateLimitBPS > 0 {
+		ratelimiter.SetLimit("global", cfg.GlobalRateLimitBPS)
 	}
 
 	downloadSvc := service.NewDownloadService(service.DownloadDeps{

@@ -2,12 +2,18 @@ package service
 
 import (
 	"context"
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"hash"
+	"hash/crc32"
 	"io"
 	"math"
 	"math/rand"
-	"os"
-	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -68,13 +74,15 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 		go func() {
 			defer wg.Done()
 			start := seg.Start
-			// Determine part path and existing size
-			tmpDir := filepath.Join(d.File.Path, ".tmp", d.ID)
-			partPath := filepath.Join(tmpDir, fmt.Sprintf("%09d.part", seg.Index))
-			if st, err := os.Stat(partPath); err == nil {
-				if st.Size() > 0 {
-					start += st.Size()
-				}
+			// Use FileStore to determine existing bytes for resume
+			probeW, existing, err := r.deps.FileStore.OpenSegmentWriter(ctx, d, seg)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			_ = probeW.Close()
+			if existing > 0 {
+				start += existing
 			}
 
 			attempts := 0
@@ -109,7 +117,7 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 						time.Sleep(wait)
 					}
 				}
-				body, smd, _, code, err := r.deps.Transport.GetRange(ctx, *d.Request, pickCfg(d), start, end)
+				body, smd, hdrs, code, err := r.deps.Transport.GetRange(ctx, *d.Request, pickCfg(d), start, end)
 				if err != nil || (code != 200 && code != 206) {
 					attempts++
 					d.RetriesAttempted = attempts
@@ -131,26 +139,116 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 					time.Sleep(delay)
 					continue
 				}
-				w2, err := r.deps.FileStore.OpenSegmentWriter(ctx, d, seg)
+				// Validate Content-Range for 206
+				if code == 206 {
+					cr := ""
+					if v, ok := hdrs["Content-Range"]; ok && len(v) > 0 {
+						cr = v[0]
+					}
+					if cr != "" {
+						// format: bytes start-end/total
+						parts := strings.Fields(cr)
+						if len(parts) == 2 && strings.ToLower(parts[0]) == "bytes" {
+							rangePart := parts[1]
+							if dash := strings.Index(rangePart, "/"); dash > 0 {
+								rangeOnly := rangePart[:dash]
+								if hy := strings.Index(rangeOnly, "-"); hy > 0 {
+									rs := rangeOnly[:hy]
+									re := rangeOnly[hy+1:]
+									if rsn, err1 := strconv.ParseInt(rs, 10, 64); err1 == nil {
+										if rsn != start {
+											// unexpected start, retry
+											body.Close()
+											attempts++
+											time.Sleep(time.Second)
+											continue
+										}
+									}
+									if end >= 0 {
+										if ren, err2 := strconv.ParseInt(re, 10, 64); err2 == nil {
+											if ren < start || ren > end {
+												body.Close()
+												attempts++
+												time.Sleep(time.Second)
+												continue
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+				w, _, err := r.deps.FileStore.OpenSegmentWriter(ctx, d, seg)
 				if err != nil {
 					body.Close()
 					errCh <- err
 					return
 				}
-				// Max file size enforcement
+				// Prepare reader and enforce boundaries if server ignored Range (200)
 				var reader io.Reader = body
+				if code == 200 {
+					if start > 0 {
+						if _, err := io.CopyN(io.Discard, body, start); err != nil {
+							_ = w.Close()
+							body.Close()
+							attempts++
+							if attempts > maxRetries {
+								errCh <- err
+								return
+							}
+							time.Sleep(time.Duration(attempts) * time.Second)
+							continue
+						}
+					}
+					if end >= 0 {
+						span := end - start + 1
+						if span < 0 {
+							span = 0
+						}
+						reader = io.LimitReader(body, span)
+					}
+				}
+				// Max file size enforcement
 				if d.File != nil && d.File.MaxFileSize > 0 {
-					reader = io.LimitReader(body, d.File.MaxFileSize-(d.BytesCompleted))
+					remaining := d.File.MaxFileSize - d.BytesCompleted
+					if remaining < 0 {
+						remaining = 0
+					}
+					reader = io.LimitReader(reader, remaining)
+				}
+				// Per-segment hash while writing (configurable)
+				var h hash.Hash
+				sht := "md5"
+				if d.Config != nil && d.Config.SegmentChecksumType != "" {
+					sht = strings.ToLower(d.Config.SegmentChecksumType)
+				}
+				switch sht {
+				case "md5":
+					h = md5.New()
+				case "sha1":
+					h = sha1.New()
+				case "sha256":
+					h = sha256.New()
+				case "crc32c":
+					h = crc32.New(crc32.MakeTable(crc32.Castagnoli))
+				case "none":
+					h = nil
+				default:
+					h = md5.New()
+				}
+				if h != nil {
+					reader = io.TeeReader(reader, h)
 				}
 				var written int64
 				if d.Config != nil && d.Config.BufferSize > 0 {
 					buf := make([]byte, d.Config.BufferSize)
-					written, err = io.CopyBuffer(w2, reader, buf)
+					written, err = io.CopyBuffer(w, reader, buf)
 				} else {
-					written, err = io.Copy(w2, reader)
+					written, err = io.Copy(w, reader)
 				}
 				body.Close()
-				_ = w2.Close()
+				_ = w.Close()
 				if err != nil && err != io.EOF {
 					attempts++
 					if attempts > maxRetries {
@@ -159,6 +257,20 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 					}
 					time.Sleep(time.Duration(attempts) * time.Second)
 					continue
+				}
+				// Validate bytes written vs expected span when known
+				if end >= 0 {
+					expected := (end - seg.Start + 1)
+					totalNow := existing + written
+					if totalNow != expected {
+						attempts++
+						if attempts > maxRetries {
+							errCh <- io.ErrUnexpectedEOF
+							return
+						}
+						time.Sleep(time.Second)
+						continue
+					}
 				}
 				// Update progress
 				progMu.Lock()
@@ -171,13 +283,19 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 				}
 				d.UpdatedAt = time.Now().UTC()
 				_ = r.deps.Repo.UpdateDownload(ctx, d)
-				_ = r.deps.Publisher.Publish(ctx, models.DownloadEvent{Type: models.EventProgress, Download: *d, Timestamp: time.Now().UTC(), Data: map[string]any{"segment": seg.Index, "bytes": smd.ContentLength}})
+				_ = r.deps.Publisher.Publish(ctx, models.DownloadEvent{Type: models.EventProgress, Download: *d, Timestamp: time.Now().UTC(), Data: map[string]any{"segment": seg.Index, "bytes": written}})
 				progMu.Unlock()
+				// Record segment checksum
+				if h != nil {
+					seg.Checksum = hex.EncodeToString(h.Sum(nil))
+				}
+				seg.BytesCompleted = existing + written
 				break
 			}
 			seg.Status = models.SegmentCompleted
 			seg.UpdatedAt = time.Now().UTC()
 			_ = r.deps.Repo.UpsertSegment(ctx, &seg)
+			_ = r.deps.FileStore.CompleteSegment(ctx, d, seg)
 		}()
 	}
 	wg.Wait()
@@ -188,6 +306,10 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 			return
 		}
 	}
+	// Mark merge state
+	d.Error = ""
+	d.UpdatedAt = time.Now().UTC()
+	_ = r.deps.Repo.UpdateDownload(ctx, d)
 	// Merge and verify
 	if err := r.deps.FileStore.MergeSegments(ctx, d); err != nil {
 		r.fail(ctx, d, err)
@@ -202,6 +324,7 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 		}
 		return
 	}
+	// Complete
 	d.Status = models.StatusCompleted
 	now := time.Now().UTC()
 	d.CompletedAt = &now

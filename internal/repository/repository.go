@@ -1090,6 +1090,9 @@ func (r *BadgerRepository) BulkSetPriorityByQueueID(ctx context.Context, queueID
 }
 
 func (r *BadgerRepository) BulkUpdateStatusByQueueID(ctx context.Context, queueID string, status models.DownloadStatus) error {
+	if status == "" {
+		return errors.New("status is required")
+	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}

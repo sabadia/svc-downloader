@@ -167,30 +167,38 @@ func Register(api huma.API, svc models.DownloadService) {
 		return &struct{}{}, h.Svc.UpdateRequest(ctx, input.ID, input.Body)
 	})
 	huma.Register(api, huma.Operation{OperationID: "setDownloadPriority", Method: http.MethodPost, Path: "/downloads/{id}/priority"}, func(ctx context.Context, input *struct {
-		ID       string `path:"id"`
-		Priority int    `json:"priority"`
+		ID   string `path:"id"`
+		Body *struct {
+			Priority int `json:"priority"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.SetPriority(ctx, input.ID, input.Priority)
+		return &struct{}{}, h.Svc.SetPriority(ctx, input.ID, input.Body.Priority)
 	})
 	huma.Register(api, huma.Operation{OperationID: "addDownloadTags", Method: http.MethodPost, Path: "/downloads/{id}/tags"}, func(ctx context.Context, input *struct {
-		ID   string   `path:"id"`
-		Tags []string `json:"tags"`
+		ID   string `path:"id"`
+		Body *struct {
+			Tags []string `json:"tags"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.AddTags(ctx, input.ID, input.Tags...)
+		return &struct{}{}, h.Svc.AddTags(ctx, input.ID, input.Body.Tags...)
 	})
 	huma.Register(api, huma.Operation{OperationID: "removeDownloadTags", Method: http.MethodDelete, Path: "/downloads/{id}/tags"}, func(ctx context.Context, input *struct {
-		ID   string   `path:"id"`
-		Tags []string `json:"tags"`
+		ID   string `path:"id"`
+		Body *struct {
+			Tags []string `json:"tags"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.RemoveTags(ctx, input.ID, input.Tags...)
+		return &struct{}{}, h.Svc.RemoveTags(ctx, input.ID, input.Body.Tags...)
 	})
 
 	// Assign queue
 	huma.Register(api, huma.Operation{OperationID: "assignQueue", Method: http.MethodPost, Path: "/downloads/{id}/queue"}, func(ctx context.Context, input *struct {
-		ID      string `path:"id"`
-		QueueID string `json:"queue_id"`
+		ID   string `path:"id"`
+		Body *struct {
+			QueueID string `json:"queue_id"`
+		}
 	}) (*struct{}, error) {
-		return &struct{}{}, h.Svc.AssignQueue(ctx, input.ID, input.QueueID)
+		return &struct{}{}, h.Svc.AssignQueue(ctx, input.ID, input.Body.QueueID)
 	})
 }
 

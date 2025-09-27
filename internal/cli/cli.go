@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -125,28 +124,6 @@ func Run() {
 				println("svc-downloader: stale pid file (pid ", pid, " not alive)")
 			}
 		}),
-	}
-
-	if runtime.GOOS == "darwin" {
-		enableCmd := &cobra.Command{
-			Use:   "enable-startup",
-			Short: "Enable starting at login (launchd on macOS)",
-			Run: humacli.WithOptions(func(cmd *cobra.Command, args []string, opts *Options) {
-				if err := enableStartup(opts); err != nil {
-					log.Fatal(err)
-				}
-			}),
-		}
-		disableCmd := &cobra.Command{
-			Use:   "disable-startup",
-			Short: "Disable starting at login (launchd on macOS)",
-			Run: humacli.WithOptions(func(cmd *cobra.Command, args []string, opts *Options) {
-				if err := disableStartup(opts); err != nil {
-					log.Fatal(err)
-				}
-			}),
-		}
-		cli.Root().AddCommand(enableCmd, disableCmd)
 	}
 
 	cli.Root().AddCommand(serveCmd, startCmd, stopCmd, restartCmd, statusCmd)

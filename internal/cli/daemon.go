@@ -10,6 +10,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/sabadia/svc-downloader/internal/config/sys"
 )
 
 func initPidFile(o *Options) error {
@@ -38,7 +40,7 @@ func startDaemon(o *Options) error {
 	args := buildArgsFromOptions(o)
 	cmd := exec.Command(execPath, args...)
 
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	sys.SetSysProcAttr(cmd)
 	if err := os.MkdirAll(filepath.Dir(o.LogFile), 0o755); err != nil {
 		return err
 	}
@@ -61,7 +63,7 @@ func startDaemon(o *Options) error {
 			return errors.New("failed to write pid file and failed to kill process: " + err.Error())
 		}
 	}
-	
+
 	return nil
 }
 

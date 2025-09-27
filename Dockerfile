@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7-labs
 
 # Multi-stage build to produce a tiny, static image
-ARG GO_VERSION=1.22
+ARG GO_VERSION=1.25.1
 
 FROM golang:${GO_VERSION}-alpine AS builder
 ARG TARGETOS

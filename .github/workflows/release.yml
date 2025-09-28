@@ -76,6 +76,7 @@ jobs:
 
       - name: Upload artifact (for aggregation)
         uses: actions/upload-artifact@v4
+        id: build-artifact
         with:
           name: ${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -131,6 +132,7 @@ jobs:
 
       - name: Upload artifact (universal)
         uses: actions/upload-artifact@v4
+        id: macos-universal-build-artifact
         with:
           name: darwin-universal
           path: |
@@ -146,9 +148,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -187,6 +186,7 @@ jobs:
 
       - name: Upload artifact (docker image)
         uses: actions/upload-artifact@v4
+        id: docker-image-build-artifact
         with:
           name: docker-image
           path: |
@@ -207,15 +207,7 @@ jobs:
           path: dist
           merge-multiple: true
 #          use the artifact names
-          artifact-ids: |
-            linux-amd64
-            linux-arm64
-            windows-amd64
-            windows-arm64
-            darwin-amd64
-            darwin-arm64
-            darwin-universal
-            docker-image
+          artifact-ids: build-artifact,macos-universal-build-artifact,docker-image-build-artifact
 
       - name: List artifacts
         run: ls -R dist

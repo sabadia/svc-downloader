@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/sabadia/svc-downloader/internal/api"
 	"github.com/sabadia/svc-downloader/internal/api/deps"
+	"github.com/sabadia/svc-downloader/internal/auth"
 	"github.com/sabadia/svc-downloader/internal/config"
 	"github.com/sabadia/svc-downloader/internal/events"
 	"github.com/sabadia/svc-downloader/internal/filestore"
@@ -62,6 +64,12 @@ func New(cfg config.Config) (*Server, error) {
 	container := deps.New(downloadSvc, queueSvc, publisher)
 	h, _ := api.NewServer(container)
 
+	// Apply authentication middleware if enabled
+	if cfg.EnableAuth && cfg.APIKey != "" {
+		authMiddleware := auth.NewAPIKeyAuth(cfg.APIKey)
+		h = authMiddleware.HumaMiddleware()(h)
+	}
+
 	addr := ":" + fmt.Sprintf("%d", resolvePort(cfg))
 	httpSrv := &http.Server{Addr: addr, Handler: h}
 
@@ -77,6 +85,7 @@ func (s *Server) RunForeground(ctx context.Context) error {
 	ctx, cancelWorkers := context.WithCancel(ctx)
 	defer cancelWorkers()
 	s.workerMgr.Start(ctx)
+
 	// start server
 	go func() {
 		log.Printf("svc-downloader listening on %s", s.httpSrv.Addr)
@@ -84,10 +93,42 @@ func (s *Server) RunForeground(ctx context.Context) error {
 			log.Fatalf("server error: %v", err)
 		}
 	}()
+
 	<-ctx.Done()
+
+	// Graceful shutdown: pause running downloads before stopping
+	log.Println("Graceful shutdown initiated, pausing running downloads...")
+	if err := s.pauseRunningDownloads(ctx); err != nil {
+		log.Printf("Warning: failed to pause some downloads: %v", err)
+	}
+
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.GracefulSecs)
 	defer cancel()
 	_ = s.httpSrv.Shutdown(shutdownCtx)
+	return nil
+}
+
+// pauseRunningDownloads transitions all running downloads to paused state
+func (s *Server) pauseRunningDownloads(ctx context.Context) error {
+	// Get all running downloads
+	downloads, err := s.repo.ListDownloads(ctx, models.ListDownloadsOptions{
+		Statuses: []models.DownloadStatus{models.StatusRunning},
+	}, 1000, 0) // Get up to 1000 running downloads
+
+	if err != nil {
+		return err
+	}
+
+	// Pause each running download
+	for _, download := range downloads {
+		download.Status = models.StatusPaused
+		download.UpdatedAt = time.Now().UTC()
+		if err := s.repo.UpdateDownload(ctx, &download); err != nil {
+			log.Printf("Failed to pause download %s: %v", download.ID, err)
+		}
+	}
+
+	log.Printf("Paused %d running downloads", len(downloads))
 	return nil
 }
 

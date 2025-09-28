@@ -5,7 +5,7 @@
 
 - **Module**: `github.com/sabadia/svc-downloader`
 - **Default port**: `8089` (override with `PORT` env)
-- **Data dir**: `./data/badger` (created automatically)
+- **Data dir**: `./data` (created automatically)
 
 ### Key Features
 - **Queue-based scheduling** with per-queue concurrency and optional queue-level rate limits
@@ -17,6 +17,9 @@
 - **Powerful filtering** for listing and counting downloads by status, queue, tags, and search
 - **SSE events** for live status updates (`/events`)
 - **Simple HTTP API** built with Huma + Chi
+- **API Authentication** with API key support
+- **OpenAPI specification** available at `/openapi.yaml`
+- **Graceful shutdown** that pauses running downloads
 
 ### High-level Architecture
 - **API layer**: `internal/api` (Huma/Chi routes)
@@ -48,10 +51,13 @@
 ### Configuration
 - **Environment**
   - `PORT`: HTTP listen port (default: 8089)
+  - `API_KEY`: API key for authentication (optional)
 - **Defaults (hard-coded in code)**
+  - Data directory: `./data`
   - BadgerDB path: `./data/badger`
   - Default queue on first run: `main` with `concurrency=32`, `default=true`
   - Graceful shutdown timeout: 10s
+  - Authentication: disabled by default
 
 ### Running
 - Prerequisites: Go 1.25+
@@ -66,6 +72,12 @@ go build -o ./bin/svc-downloader ./cmd/server
 
 # Change port
 PORT=9090 go run ./cmd/server
+
+# Enable authentication
+API_KEY=your-secret-key go run ./cmd/server
+
+# Or use CLI flags
+go run ./cmd/server --api-key=your-secret-key --enable-auth
 ```
 
 ### How it works (brief)
@@ -78,6 +90,15 @@ PORT=9090 go run ./cmd/server
 
 ### API
 Base URL: `http://localhost:8089`
+
+#### Authentication
+When authentication is enabled, include the API key in the `Authorization` header:
+```bash
+curl -H "Authorization: Bearer your-api-key" http://localhost:8089/downloads
+```
+
+#### OpenAPI Specification
+The API specification is available at `/openapi.yaml` for generating client code and documentation.
 
 #### Downloads
 - **Enqueue**: `POST /downloads`
@@ -186,6 +207,6 @@ curl -sS -X POST http://localhost:8089/queues \
 
 ### Limitations / Future Work
 - Persistence for events is in-memory only; SSE subscribers receive live events
-- No authentication/authorization on the API
-- No built-in OpenAPI file emission in this repo (Huma can generate if wired)
 - Single local filestore backend
+- API key authentication is basic; consider OAuth2 for production use
+- No built-in metrics or monitoring endpoints

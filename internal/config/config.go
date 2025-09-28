@@ -1,8 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"time"
 )
 
@@ -16,20 +14,20 @@ type Config struct {
 	DefaultQueueID     string
 	GracefulSecs       time.Duration
 	GlobalRateLimitBPS int64
+	APIKey             string
+	EnableAuth         bool
 }
 
 func Default() Config {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
-	}
 	return Config{
 		HTTPPort:           8089,
-		DataDir:            filepath.Join(home, ".slog", "downloader", "data"),
-		BadgerDir:          filepath.Join(home, ".slog", "downloader", "data", "badger"),
+		DataDir:            "./data",
+		BadgerDir:          "./data/badger",
 		MaxBodyBytes:       25 << 20,
 		DefaultQueueID:     "main",
 		GracefulSecs:       10 * time.Second,
 		GlobalRateLimitBPS: 0,
+		APIKey:             "",
+		EnableAuth:         false,
 	}
 }

@@ -14,10 +14,6 @@ import (
 	"github.com/sabadia/svc-downloader/internal/config/sys"
 )
 
-func initPidFile(o *Options) error {
-
-	return nil
-}
 func startDaemon(o *Options) error {
 	execPath, err := os.Executable()
 	if err != nil {

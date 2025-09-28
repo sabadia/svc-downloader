@@ -101,10 +101,13 @@ func Run() {
 			if opts.GracefulShutdownSecs == 0 {
 				opts.GracefulShutdownSecs = int(def.GracefulSecs / time.Second)
 			}
-			_ = stopDaemon(opts, opts.GracefulShutdownSecs)
-			if err := initPidFile(opts); err != nil {
+			if err := stopDaemon(opts, opts.GracefulShutdownSecs); err != nil {
 				log.Fatal(err)
 			}
+			if err := startDaemon(opts); err != nil {
+				log.Fatal(err)
+			}
+			fmt.Println("Restarted svc-downloader in background")
 		}),
 	}
 

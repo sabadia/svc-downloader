@@ -2,6 +2,7 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,13 @@ import (
 )
 
 type EventsAPI struct{ pub models.EventPublisher }
+
+// SSEEvent represents a Server-Sent Event
+type SSEEvent struct {
+	ID     string                 `json:"id"`
+	Status string                 `json:"status"`
+	Data   map[string]interface{} `json:"data,omitempty"`
+}
 
 func RegisterEvents(api huma.API, pub models.EventPublisher) {
 	h := &EventsAPI{pub: pub}
@@ -43,8 +51,20 @@ func RegisterEvents(api huma.API, pub models.EventPublisher) {
 				case <-ctx.Done():
 					return
 				case ev := <-ch:
+					sseEvent := SSEEvent{
+						ID:     ev.Download.ID,
+						Status: string(ev.Download.Status),
+						Data:   ev.Data,
+					}
+
+					eventData, err := json.Marshal(sseEvent)
+					if err != nil {
+						// Log error but continue
+						continue
+					}
+
 					_, _ = fmt.Fprintf(pw, "event: %s\n", ev.Type)
-					_, _ = fmt.Fprintf(pw, "data: {\"id\":\"%s\",\"status\":\"%s\"}\n\n", ev.Download.ID, ev.Download.Status)
+					_, _ = fmt.Fprintf(pw, "data: %s\n\n", string(eventData))
 				case <-ticker.C:
 					_, _ = io.WriteString(pw, ": keep-alive\n\n")
 				}

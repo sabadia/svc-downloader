@@ -91,8 +91,24 @@ func Register(api huma.API, svc models.DownloadService) {
 		opts.Search = input.Search
 		opts.OrderBy = input.Order
 		opts.OrderDesc = input.Desc
-		limit, _ := strconv.Atoi(input.Limit)
-		offset, _ := strconv.Atoi(input.Offset)
+
+		limit := 0
+		if input.Limit != "" {
+			var err error
+			limit, err = strconv.Atoi(input.Limit)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invalid limit parameter")
+			}
+		}
+
+		offset := 0
+		if input.Offset != "" {
+			var err error
+			offset, err = strconv.Atoi(input.Offset)
+			if err != nil {
+				return nil, huma.Error400BadRequest("invalid offset parameter")
+			}
+		}
 		list, err := h.Svc.List(ctx, opts, limit, offset)
 		if err != nil {
 			return nil, err

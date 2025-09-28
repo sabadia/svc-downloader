@@ -26,6 +26,10 @@ type Options struct {
 	Daemonize bool   `doc:"Run in background (headless) and write PID/log files."`
 	PIDFile   string `doc:"Path to PID file when running as a daemon."`
 	LogFile   string `doc:"Path to log file when running as a daemon."`
+
+	// Authentication
+	APIKey     string `doc:"API key for authentication (enables auth when set)."`
+	EnableAuth bool   `doc:"Enable API key authentication."`
 }
 
 func applyDynamicDefaults(o *Options) {
@@ -60,6 +64,12 @@ func applyDynamicDefaults(o *Options) {
 	if o.GracefulShutdownSecs == 0 {
 		o.GracefulShutdownSecs = int(def.GracefulSecs / time.Second)
 	}
+	if o.APIKey == "" {
+		o.APIKey = def.APIKey
+	}
+	if o.EnableAuth {
+		o.EnableAuth = def.EnableAuth
+	}
 	if o.PIDFile == "" {
 		o.PIDFile = filepath.Join(o.DataDir, "svc-downloader.pid")
 	}
@@ -77,6 +87,8 @@ func toConfig(o *Options) config.Config {
 		DefaultQueueID:     o.DefaultQueueID,
 		GracefulSecs:       time.Duration(o.GracefulShutdownSecs) * time.Second,
 		GlobalRateLimitBPS: o.GlobalRateLimitBPS,
+		APIKey:             o.APIKey,
+		EnableAuth:         o.EnableAuth || o.APIKey != "",
 	}
 }
 

@@ -13,13 +13,30 @@ import (
 	"github.com/sabadia/svc-downloader/internal/models"
 )
 
-type HTTPClient struct{ c *http.Client }
+type HTTPClient struct {
+	c                *http.Client
+	defaultTransport *http.Transport
+}
 
 func NewHTTPClient(timeout time.Duration) *HTTPClient {
 	if timeout == 0 {
 		timeout = 30 * time.Minute
 	}
-	return &HTTPClient{c: &http.Client{Timeout: timeout}}
+
+	// Create a default transport that can be cloned and customized
+	defaultTransport := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	return &HTTPClient{
+		c: &http.Client{
+			Timeout:   timeout,
+			Transport: defaultTransport,
+		},
+		defaultTransport: defaultTransport,
+	}
 }
 
 func (h *HTTPClient) Head(ctx context.Context, req models.RequestOptions, cfg models.DownloadConfig) (*models.ResponseMetadata, map[string][]string, error) {
@@ -124,7 +141,10 @@ func (h *HTTPClient) headFallback(ctx context.Context, req models.RequestOptions
 }
 
 func (h *HTTPClient) clientFor(cfg models.DownloadConfig) *http.Client {
-	tr := &http.Transport{}
+	// Clone the default transport for customization
+	tr := h.defaultTransport.Clone()
+
+	// Configure TLS
 	tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: cfg.AllowInsecureTLS}
 	if cfg.TLS != nil {
 		tr.TLSClientConfig.InsecureSkipVerify = cfg.TLS.InsecureSkipVerify || tr.TLSClientConfig.InsecureSkipVerify
@@ -136,6 +156,8 @@ func (h *HTTPClient) clientFor(cfg models.DownloadConfig) *http.Client {
 			tr.TLSClientConfig.MaxVersion = cfg.TLS.MaxVersion
 		}
 	}
+
+	// Configure proxy
 	if cfg.Proxy != nil && cfg.Proxy.IP != "" && cfg.Proxy.Port != 0 {
 		u := &url.URL{Scheme: "http", Host: cfg.Proxy.IP + ":" + strconv.Itoa(cfg.Proxy.Port)}
 		if cfg.Proxy.Username != "" {
@@ -143,7 +165,11 @@ func (h *HTTPClient) clientFor(cfg models.DownloadConfig) *http.Client {
 		}
 		tr.Proxy = http.ProxyURL(u)
 	}
+
+	// Create client with cloned transport
 	client := &http.Client{Transport: tr}
+
+	// Configure redirects
 	follow := cfg.FollowRedirects
 	limit := cfg.RedirectsLimit
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -155,9 +181,14 @@ func (h *HTTPClient) clientFor(cfg models.DownloadConfig) *http.Client {
 		}
 		return nil
 	}
+
+	// Configure timeout
 	if cfg.Timeout > 0 {
 		client.Timeout = cfg.Timeout
+	} else {
+		client.Timeout = h.c.Timeout
 	}
+
 	return client
 }
 

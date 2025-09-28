@@ -29,6 +29,9 @@ func (r *DownloadRunner) Run(ctx context.Context, id string) {
 	// Best-effort; internal goroutine, log/emit events via publisher in case of errors.
 	d, err := r.deps.Repo.GetDownload(ctx, id)
 	if err != nil {
+		// Create a minimal download object for error reporting
+		d = &models.Download{ID: id, Status: models.StatusFailed, Error: err.Error()}
+		r.fail(ctx, d, err)
 		return
 	}
 

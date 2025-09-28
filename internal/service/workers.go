@@ -11,10 +11,28 @@ type WorkerManager struct {
 	svc  *DownloadServiceImpl
 	repo models.Repository
 	stop chan struct{}
+	cfg  WorkerConfig
+}
+
+type WorkerConfig struct {
+	TickInterval         time.Duration
+	StaleDownloadTimeout time.Duration
 }
 
 func NewWorkerManager(svc *DownloadServiceImpl, repo models.Repository) *WorkerManager {
-	return &WorkerManager{svc: svc, repo: repo, stop: make(chan struct{})}
+	return &WorkerManager{
+		svc:  svc,
+		repo: repo,
+		stop: make(chan struct{}),
+		cfg: WorkerConfig{
+			TickInterval:         2 * time.Second,
+			StaleDownloadTimeout: 5 * time.Minute,
+		},
+	}
+}
+
+func NewWorkerManagerWithConfig(svc *DownloadServiceImpl, repo models.Repository, cfg WorkerConfig) *WorkerManager {
+	return &WorkerManager{svc: svc, repo: repo, stop: make(chan struct{}), cfg: cfg}
 }
 
 func (w *WorkerManager) Start(ctx context.Context) {
@@ -24,7 +42,7 @@ func (w *WorkerManager) Start(ctx context.Context) {
 func (w *WorkerManager) Stop() { close(w.stop) }
 
 func (w *WorkerManager) loop(ctx context.Context) {
-	ticker := time.NewTicker(2 * time.Second)
+	ticker := time.NewTicker(w.cfg.TickInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -43,8 +61,8 @@ func (w *WorkerManager) tick(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	// Recover stale running downloads (no updates for 5 minutes)
-	const staleAfter = 5 * time.Minute
+	// Recover stale running downloads
+	staleAfter := w.cfg.StaleDownloadTimeout
 	runningList, _ := w.repo.ListDownloads(ctx, models.ListDownloadsOptions{Statuses: []models.DownloadStatus{models.StatusRunning}}, 1000, 0)
 	for i := range runningList {
 		d := runningList[i]

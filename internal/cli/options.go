@@ -30,6 +30,10 @@ type Options struct {
 	// Authentication
 	APIKey     string `doc:"API key for authentication (enables auth when set)."`
 	EnableAuth bool   `doc:"Enable API key authentication."`
+
+	// Worker configuration
+	WorkerTickInterval   int `doc:"Worker tick interval in seconds." default:"2"`
+	StaleDownloadTimeout int `doc:"Stale download timeout in seconds." default:"300"`
 }
 
 func applyDynamicDefaults(o *Options) {
@@ -70,6 +74,12 @@ func applyDynamicDefaults(o *Options) {
 	if o.EnableAuth {
 		o.EnableAuth = def.EnableAuth
 	}
+	if o.WorkerTickInterval == 0 {
+		o.WorkerTickInterval = int(def.WorkerTickInterval / time.Second)
+	}
+	if o.StaleDownloadTimeout == 0 {
+		o.StaleDownloadTimeout = int(def.StaleDownloadTimeout / time.Second)
+	}
 	if o.PIDFile == "" {
 		o.PIDFile = filepath.Join(o.DataDir, "svc-downloader.pid")
 	}
@@ -80,15 +90,17 @@ func applyDynamicDefaults(o *Options) {
 
 func toConfig(o *Options) config.Config {
 	return config.Config{
-		HTTPPort:           o.Port,
-		DataDir:            o.DataDir,
-		BadgerDir:          o.BadgerDir,
-		MaxBodyBytes:       o.MaxBodyBytes,
-		DefaultQueueID:     o.DefaultQueueID,
-		GracefulSecs:       time.Duration(o.GracefulShutdownSecs) * time.Second,
-		GlobalRateLimitBPS: o.GlobalRateLimitBPS,
-		APIKey:             o.APIKey,
-		EnableAuth:         o.EnableAuth || o.APIKey != "",
+		HTTPPort:             o.Port,
+		DataDir:              o.DataDir,
+		BadgerDir:            o.BadgerDir,
+		MaxBodyBytes:         o.MaxBodyBytes,
+		DefaultQueueID:       o.DefaultQueueID,
+		GracefulSecs:         time.Duration(o.GracefulShutdownSecs) * time.Second,
+		GlobalRateLimitBPS:   o.GlobalRateLimitBPS,
+		APIKey:               o.APIKey,
+		EnableAuth:           o.EnableAuth || o.APIKey != "",
+		WorkerTickInterval:   time.Duration(o.WorkerTickInterval) * time.Second,
+		StaleDownloadTimeout: time.Duration(o.StaleDownloadTimeout) * time.Second,
 	}
 }
 

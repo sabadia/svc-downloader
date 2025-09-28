@@ -3,8 +3,9 @@ package server
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/sabadia/svc-downloader/internal/api"
@@ -27,11 +28,18 @@ type Server struct {
 	repo      *repository.BadgerRepository
 	workerMgr *service.WorkerManager
 	httpSrv   *http.Server
+	logger    *slog.Logger
 }
 
 func New(cfg config.Config) (*Server, error) {
+	// Initialize structured logger
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+
 	repo, err := repository.NewBadgerRepository(cfg.BadgerDir)
 	if err != nil {
+		logger.Error("Failed to create repository", "error", err, "badger_dir", cfg.BadgerDir)
 		return nil, err
 	}
 
@@ -73,9 +81,19 @@ func New(cfg config.Config) (*Server, error) {
 	addr := ":" + fmt.Sprintf("%d", resolvePort(cfg))
 	httpSrv := &http.Server{Addr: addr, Handler: h}
 
-	workerMgr := service.NewWorkerManager(downloadSvc, repo)
+	workerCfg := service.WorkerConfig{
+		TickInterval:         cfg.WorkerTickInterval,
+		StaleDownloadTimeout: cfg.StaleDownloadTimeout,
+	}
+	workerMgr := service.NewWorkerManagerWithConfig(downloadSvc, repo, workerCfg)
 
-	return &Server{cfg: cfg, repo: repo, workerMgr: workerMgr, httpSrv: httpSrv}, nil
+	logger.Info("Server initialized successfully",
+		"port", resolvePort(cfg),
+		"data_dir", cfg.DataDir,
+		"badger_dir", cfg.BadgerDir,
+		"auth_enabled", cfg.EnableAuth)
+
+	return &Server{cfg: cfg, repo: repo, workerMgr: workerMgr, httpSrv: httpSrv, logger: logger}, nil
 }
 
 func (s *Server) Addr() string { return s.httpSrv.Addr }
@@ -88,18 +106,19 @@ func (s *Server) RunForeground(ctx context.Context) error {
 
 	// start server
 	go func() {
-		log.Printf("svc-downloader listening on %s", s.httpSrv.Addr)
+		s.logger.Info("Starting HTTP server", "addr", s.httpSrv.Addr)
 		if err := s.httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("server error: %v", err)
+			s.logger.Error("Server error", "error", err)
+			os.Exit(1)
 		}
 	}()
 
 	<-ctx.Done()
 
 	// Graceful shutdown: pause running downloads before stopping
-	log.Println("Graceful shutdown initiated, pausing running downloads...")
+	s.logger.Info("Graceful shutdown initiated, pausing running downloads")
 	if err := s.pauseRunningDownloads(ctx); err != nil {
-		log.Printf("Warning: failed to pause some downloads: %v", err)
+		s.logger.Warn("Failed to pause some downloads", "error", err)
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), s.cfg.GracefulSecs)
@@ -124,11 +143,13 @@ func (s *Server) pauseRunningDownloads(ctx context.Context) error {
 		download.Status = models.StatusPaused
 		download.UpdatedAt = time.Now().UTC()
 		if err := s.repo.UpdateDownload(ctx, &download); err != nil {
-			log.Printf("Failed to pause download %s: %v", download.ID, err)
+			s.logger.Error("Failed to pause download",
+				"download_id", download.ID,
+				"error", err)
 		}
 	}
 
-	log.Printf("Paused %d running downloads", len(downloads))
+	s.logger.Info("Paused running downloads", "count", len(downloads))
 	return nil
 }
 

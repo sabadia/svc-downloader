@@ -244,8 +244,7 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-#          use the artifact names
-          artifact-ids: ${{ needs.build-matrix.upload-artifact.outputs.artifact-id }},${{ needs.macos-universal.upload-artifact.outputs.artifact-id }},${{ needs.docker.upload-artifact.outputs.artifact-id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: List artifacts
         run: ls -R dist

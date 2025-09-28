@@ -76,7 +76,7 @@ jobs:
 
       - name: Upload artifact (for aggregation)
         uses: actions/upload-artifact@v4
-        id: build-artifact
+        id: upload-artifact
         with:
           name: ${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -132,7 +132,7 @@ jobs:
 
       - name: Upload artifact (universal)
         uses: actions/upload-artifact@v4
-        id: macos-universal-build-artifact
+        id: upload-artifact
         with:
           name: darwin-universal
           path: |
@@ -149,6 +149,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -163,6 +166,40 @@ jobs:
           echo "ghcr=ghcr.io/${OWNER_REPO}:${TAG}" >> $GITHUB_OUTPUT
           echo "ghcr_latest=ghcr.io/${OWNER_REPO}:latest" >> $GITHUB_OUTPUT
           echo "image_name=${OWNER_REPO##*/}" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub (optional)
+        uses: docker/login-action@v3
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            APP_NAME=${{ env.APP_NAME }}
+            MAIN_PKG=${{ env.MAIN_PKG }}
+          tags: |
+            ${{ steps.meta.outputs.ghcr }}
+            ${{ steps.meta.outputs.ghcr_latest }}
+          labels: |
+            org.opencontainers.image.title=${{ env.APP_NAME }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Prepare dist dir
         run: mkdir -p dist
@@ -186,7 +223,7 @@ jobs:
 
       - name: Upload artifact (docker image)
         uses: actions/upload-artifact@v4
-        id: docker-image-build-artifact
+        id: upload-artifact
         with:
           name: docker-image
           path: |
@@ -195,6 +232,7 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
           if-no-files-found: error
+
 
   publish:
     name: Attach assets to release
@@ -207,7 +245,7 @@ jobs:
           path: dist
           merge-multiple: true
 #          use the artifact names
-          artifact-ids: build-artifact,macos-universal-build-artifact,docker-image-build-artifact
+          artifact-ids: ${{ needs.build-matrix.upload-artifact.outputs.artifact-id }},${{ needs.macos-universal.upload-artifact.outputs.artifact-id }},${{ needs.docker.upload-artifact.outputs.artifact-id }}
 
       - name: List artifacts
         run: ls -R dist
